@@ -1,6 +1,8 @@
 import os
 import json
 import logging
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
@@ -8,13 +10,29 @@ from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filte
 load_dotenv()
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-RAW_LOG_URL = os.environ.get("LOG_URL", "https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/run.jsonl")
+RAW_LOG_URL = os.environ.get("LOG_URL", "https://raw.githubusercontent.com/itsmeanadi/telegrambot/main/run.jsonl")
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/plain")
+        self.end_headers()
+        self.wfile.write(b"OK")
+
+    def log_message(self, format, *args):
+        return
+
+def start_health_check_server():
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
+    logger.info(f"Starting health check server on port {port}")
+    server.serve_forever()
 
 def log_interaction(chat_id, message_text, reply_text):
     log_entry = {
@@ -53,8 +71,12 @@ if __name__ == "__main__":
         print("Error: TELEGRAM_BOT_TOKEN environment variable not set.")
         exit(1)
 
+    # Start dummy HTTP server in background thread for Render Free Web Service health check
+    threading.Thread(target=start_health_check_server, daemon=True).start()
+
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), process_message))
 
     print("Data Analyst Telegram Bot is running...")
     app.run_polling()
+
